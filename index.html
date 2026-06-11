@@ -383,6 +383,8 @@
       white-space: nowrap;
     }
     #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+    .amount-frac { opacity: 0.6; }
   </style>
 </head>
 <body>
@@ -465,6 +467,13 @@
       </div>
       <select id="cycle-start-day" class="settings-select"></select>
     </div>
+    <div class="settings-row">
+      <div>
+        <div class="settings-row-label">Currency</div>
+        <div class="settings-row-desc">Symbol shown next to amounts</div>
+      </div>
+      <select id="currency-select" class="settings-select"></select>
+    </div>
   </div>
 </div>
 
@@ -528,6 +537,9 @@ function saveSettings(s) {
 function getCycleStartDay() {
   return getSettings().cycleStartDay || 1;
 }
+function getCurrency() {
+  return getSettings().currency || '';
+}
 
 // ── Date helpers ──
 function initView() {
@@ -545,7 +557,23 @@ const MONTH_NAMES = ['January','February','March','April','May','June','July','A
 const SHORT_MONTH = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 function fmtAmount(n) {
+  const currency = getCurrency();
+  if (currency) {
+    return Number(n).toLocaleString(undefined, { style: 'currency', currency });
+  }
   return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtAmountHTML(n) {
+  const currency = getCurrency();
+  const opts = currency
+    ? { style: 'currency', currency }
+    : { minimumFractionDigits: 2, maximumFractionDigits: 2 };
+  const parts = new Intl.NumberFormat(currency ? undefined : 'en-US', opts).formatToParts(Number(n));
+  return parts.map(p =>
+    (p.type === 'decimal' || p.type === 'fraction')
+      ? `<span class="amount-frac">${p.value}</span>`
+      : p.value
+  ).join('');
 }
 function fmtTime(isoStr) {
   return new Date(isoStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -627,7 +655,7 @@ function monthExpenses() {
 function renderSummary() {
   const list = monthExpenses();
   const total = list.reduce((s, e) => s + parseFloat(e.amount), 0);
-  document.getElementById('total-amount').textContent = fmtAmount(total);
+  document.getElementById('total-amount').innerHTML = fmtAmountHTML(total);
   const n = list.length;
   document.getElementById('total-count').textContent = `${n} expense${n !== 1 ? 's' : ''}`;
 }
@@ -658,7 +686,7 @@ function renderHistory() {
             <div class="expense-desc">${escHtml(e.desc || 'Expense')}</div>
             <div class="expense-time">${fmtTime(e.date)}</div>
           </div>
-          <div class="expense-amount">${fmtAmount(e.amount)}</div>
+          <div class="expense-amount">${fmtAmountHTML(e.amount)}</div>
           <div class="expense-chevron">›</div>
         </div>
       `).join('')}
@@ -773,6 +801,22 @@ function initSettingsUI() {
     s.cycleStartDay = parseInt(sel.value);
     saveSettings(s);
     initView();
+    render();
+  });
+
+  const CURRENCIES = ['', 'USD', 'EUR', 'GBP', 'ILS', 'JPY', 'CAD', 'AUD', 'CHF', 'INR', 'BRL', 'MXN', 'SGD', 'NOK', 'SEK'];
+  const currSel = document.getElementById('currency-select');
+  CURRENCIES.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c || 'None';
+    currSel.appendChild(opt);
+  });
+  currSel.value = getCurrency();
+  currSel.addEventListener('change', () => {
+    const s = getSettings();
+    s.currency = currSel.value;
+    saveSettings(s);
     render();
   });
 }
