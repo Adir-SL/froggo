@@ -227,6 +227,8 @@
       margin-bottom: 18px; text-align: center;
     }
     .sheet-field { margin-bottom: 12px; }
+    .sheet-field-row { display: flex; gap: 10px; margin-bottom: 12px; }
+    .sheet-field-row .sheet-field { flex: 1; margin-bottom: 0; }
     .sheet-field label {
       display: block;
       font-size: 12px; font-weight: 700; text-transform: uppercase;
@@ -247,7 +249,8 @@
     }
     .sheet-input:focus { border-color: var(--accent); }
     .sheet-input.sm { font-size: 16px; font-weight: 500; }
-    .sheet-input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: .5; cursor: pointer; }
+    .sheet-input[type="date"]::-webkit-calendar-picker-indicator,
+    .sheet-input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: .5; cursor: pointer; }
     .sheet-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
 
     .btn-save {
@@ -450,9 +453,15 @@
     <label>Description</label>
     <input class="sheet-input sm" id="edit-desc" type="text" maxlength="40" autocorrect="off" autocapitalize="words" />
   </div>
-  <div class="sheet-field">
-    <label>Date</label>
-    <input class="sheet-input sm" id="edit-date" type="date" />
+  <div class="sheet-field-row">
+    <div class="sheet-field">
+      <label>Date</label>
+      <input class="sheet-input sm" id="edit-date" type="date" />
+    </div>
+    <div class="sheet-field">
+      <label>Time</label>
+      <input class="sheet-input sm" id="edit-time" type="time" />
+    </div>
   </div>
   <div class="sheet-actions">
     <button class="btn-save" id="btn-save">Save Changes</button>
@@ -479,6 +488,26 @@
         <div class="settings-row-desc">Symbol shown next to amounts</div>
       </div>
       <select id="currency-select" class="settings-select"></select>
+    </div>
+    <div class="settings-row">
+      <div>
+        <div class="settings-row-label">Time format</div>
+        <div class="settings-row-desc">12-hour (AM/PM) or 24-hour clock</div>
+      </div>
+      <select id="time-format-select" class="settings-select">
+        <option value="12h">12h</option>
+        <option value="24h">24h</option>
+      </select>
+    </div>
+    <div class="settings-row">
+      <div>
+        <div class="settings-row-label">Date format</div>
+        <div class="settings-row-desc">Order of day and month</div>
+      </div>
+      <select id="date-format-select" class="settings-select">
+        <option value="dmy">14 Jun</option>
+        <option value="mdy">Jun 14</option>
+      </select>
     </div>
   </div>
 </div>
@@ -546,6 +575,12 @@ function getCycleStartDay() {
 function getCurrency() {
   return getSettings().currency || '';
 }
+function getTimeFormat() {
+  return getSettings().timeFormat || '12h';
+}
+function getDateFormat() {
+  return getSettings().dateFormat || 'dmy';
+}
 
 // ── Date helpers ──
 function initView() {
@@ -583,16 +618,18 @@ function fmtAmountHTML(n) {
   ).join('');
 }
 function fmtTime(isoStr) {
-  return new Date(isoStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return new Date(isoStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: getTimeFormat() === '12h' });
 }
 function dayLabel(isoStr) {
   const d = new Date(isoStr);
   const dDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const nDate = new Date(); nDate.setHours(0,0,0,0);
   const diff = Math.round((nDate - dDate) / 86400000);
-  if (diff === 0) return 'Today';
-  if (diff === 1) return 'Yesterday';
-  return `${SHORT_DAY[d.getDay()]}, ${d.getDate()} ${SHORT_MONTH[d.getMonth()]}`;
+  const day = d.getDate(), mon = SHORT_MONTH[d.getMonth()], dow = SHORT_DAY[d.getDay()];
+  const datePart = getDateFormat() === 'dmy' ? `${dow}, ${day} ${mon}` : `${dow}, ${mon} ${day}`;
+  if (diff === 0) return `Today · ${datePart}`;
+  if (diff === 1) return `Yesterday · ${datePart}`;
+  return datePart;
 }
 function emojiFor(desc) {
   const d = (desc || '').toLowerCase();
@@ -756,7 +793,9 @@ function openEditSheet(id) {
   editingId = id;
   document.getElementById('edit-amount').value = e.amount;
   document.getElementById('edit-desc').value = e.desc;
-  document.getElementById('edit-date').value = new Date(e.date).toLocaleDateString('en-CA');
+  const _d = new Date(e.date);
+  document.getElementById('edit-date').value = _d.toLocaleDateString('en-CA');
+  document.getElementById('edit-time').value = _d.toTimeString().slice(0, 5);
   document.getElementById('sheet-overlay').classList.add('open');
   document.getElementById('bottom-sheet').classList.add('open');
   setTimeout(() => document.getElementById('edit-amount').focus(), 320);
@@ -773,12 +812,13 @@ function saveEdit() {
   const amount = parseFloat(document.getElementById('edit-amount').value);
   const desc = document.getElementById('edit-desc').value.trim();
   const dateVal = document.getElementById('edit-date').value;
+  const timeVal = document.getElementById('edit-time').value;
   if (!amount || amount <= 0) return;
   const idx = expenses.findIndex(x => x.id === editingId);
   if (idx === -1) return;
   expenses[idx].amount = amount.toFixed(2);
   expenses[idx].desc = desc;
-  if (dateVal) expenses[idx].date = new Date(dateVal + 'T12:00:00').toISOString();
+  if (dateVal) expenses[idx].date = new Date(`${dateVal}T${timeVal || '12:00'}:00`).toISOString();
   save();
   saveSuggestion(desc);
   closeEditSheet();
@@ -826,6 +866,24 @@ function initSettingsUI() {
   currSel.addEventListener('change', () => {
     const s = getSettings();
     s.currency = currSel.value;
+    saveSettings(s);
+    render();
+  });
+
+  const timeFormatSel = document.getElementById('time-format-select');
+  timeFormatSel.value = getTimeFormat();
+  timeFormatSel.addEventListener('change', () => {
+    const s = getSettings();
+    s.timeFormat = timeFormatSel.value;
+    saveSettings(s);
+    render();
+  });
+
+  const dateFormatSel = document.getElementById('date-format-select');
+  dateFormatSel.value = getDateFormat();
+  dateFormatSel.addEventListener('change', () => {
+    const s = getSettings();
+    s.dateFormat = dateFormatSel.value;
     saveSettings(s);
     render();
   });
