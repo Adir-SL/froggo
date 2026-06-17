@@ -389,9 +389,9 @@
     /* ── Toast ── */
     #toast {
       position: fixed;
-      bottom: calc(20px + env(safe-area-inset-bottom));
+      top: calc(20px + env(safe-area-inset-top));
       left: 50%;
-      transform: translateX(-50%) translateY(20px);
+      transform: translateX(-50%) translateY(-20px);
       opacity: 0;
       background: var(--green);
       color: #0f1116;
@@ -659,6 +659,11 @@ function saveSuggestion(desc) {
   list = [desc, ...list.filter(s => s.toLowerCase() !== desc.toLowerCase())].slice(0, 12);
   localStorage.setItem(SUGGESTIONS_KEY, JSON.stringify(list));
 }
+function pruneUnusedSuggestions() {
+  const descSet = new Set(expenses.map(e => (e.desc || '').toLowerCase()));
+  const pruned = loadSuggestions().filter(s => descSet.has(s.toLowerCase()));
+  localStorage.setItem(SUGGESTIONS_KEY, JSON.stringify(pruned));
+}
 
 // ── Settings ──
 function getSettings() {
@@ -861,7 +866,7 @@ function renderAddSuggestions(query) {
   const all = loadSuggestions();
   const filtered = query ? all.filter(s => s.toLowerCase().includes(query.toLowerCase())) : all;
   document.getElementById('add-suggestions').innerHTML = filtered.slice(0, 8).map(s =>
-    `<button class="suggestion-chip" data-val="${escHtml(s)}">${escHtml(s)}</button>`
+    `<button class="suggestion-chip" data-val="${escHtml(s)}">${emojiFor(s)} ${escHtml(s)}</button>`
   ).join('');
 }
 
@@ -898,6 +903,7 @@ function confirmAdd() {
   });
   save();
   saveSuggestion(desc);
+  pruneUnusedSuggestions();
   initView();
   closeAddSheet();
   render();
@@ -939,6 +945,7 @@ function saveEdit() {
   if (dateVal) expenses[idx].date = new Date(`${dateVal}T${timeVal || '12:00'}:00`).toISOString();
   save();
   saveSuggestion(desc);
+  pruneUnusedSuggestions();
   closeEditSheet();
   render();
   showToast('Saved');
@@ -1077,6 +1084,7 @@ function confirmDelete() {
   if (!pendingDeleteId) return;
   expenses = expenses.filter(e => e.id !== pendingDeleteId);
   save();
+  pruneUnusedSuggestions();
   closeModal();
   closeEditSheet();
   render();
