@@ -247,6 +247,7 @@
     }
     .sheet-input:focus { border-color: var(--accent); }
     .sheet-input.sm { font-size: 16px; font-weight: 500; }
+    .sheet-input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: .5; cursor: pointer; }
     .sheet-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
 
     .btn-save {
@@ -449,6 +450,10 @@
     <label>Description</label>
     <input class="sheet-input sm" id="edit-desc" type="text" maxlength="40" autocorrect="off" autocapitalize="words" />
   </div>
+  <div class="sheet-field">
+    <label>Date</label>
+    <input class="sheet-input sm" id="edit-date" type="date" />
+  </div>
   <div class="sheet-actions">
     <button class="btn-save" id="btn-save">Save Changes</button>
     <button class="btn-delete" id="btn-delete-from-sheet">Delete Expense</button>
@@ -556,6 +561,7 @@ function initView() {
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const SHORT_MONTH = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const SHORT_DAY   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 function fmtAmount(n) {
   const currency = getCurrency();
@@ -586,7 +592,7 @@ function dayLabel(isoStr) {
   const diff = Math.round((nDate - dDate) / 86400000);
   if (diff === 0) return 'Today';
   if (diff === 1) return 'Yesterday';
-  return `${d.getDate()} ${SHORT_MONTH[d.getMonth()]}`;
+  return `${SHORT_DAY[d.getDay()]}, ${d.getDate()} ${SHORT_MONTH[d.getMonth()]}`;
 }
 function emojiFor(desc) {
   const d = (desc || '').toLowerCase();
@@ -750,6 +756,7 @@ function openEditSheet(id) {
   editingId = id;
   document.getElementById('edit-amount').value = e.amount;
   document.getElementById('edit-desc').value = e.desc;
+  document.getElementById('edit-date').value = new Date(e.date).toLocaleDateString('en-CA');
   document.getElementById('sheet-overlay').classList.add('open');
   document.getElementById('bottom-sheet').classList.add('open');
   setTimeout(() => document.getElementById('edit-amount').focus(), 320);
@@ -765,11 +772,13 @@ function saveEdit() {
   if (!editingId) return;
   const amount = parseFloat(document.getElementById('edit-amount').value);
   const desc = document.getElementById('edit-desc').value.trim();
+  const dateVal = document.getElementById('edit-date').value;
   if (!amount || amount <= 0) return;
   const idx = expenses.findIndex(x => x.id === editingId);
   if (idx === -1) return;
   expenses[idx].amount = amount.toFixed(2);
   expenses[idx].desc = desc;
+  if (dateVal) expenses[idx].date = new Date(dateVal + 'T12:00:00').toISOString();
   save();
   saveSuggestion(desc);
   closeEditSheet();
