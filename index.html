@@ -93,6 +93,7 @@
     }
     .settings-btn:active { color: var(--text); background: var(--surface2); }
     .settings-btn .material-icons-round { font-size: 22px; }
+    .settings-btn.active { color: var(--accent); }
 
     /* ── Summary ── */
     .summary {
@@ -390,6 +391,53 @@
     #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
 
     .amount-frac { opacity: 0.6; }
+
+    /* ── Filter bar ── */
+    .filter-bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 0 16px 12px; flex-wrap: wrap;
+    }
+    .filter-toggle-btn {
+      display: flex; align-items: center; gap: 4px;
+      background: var(--surface2); border: 1.5px solid var(--border);
+      border-radius: 20px; padding: 6px 12px 6px 10px;
+      font-size: 13px; font-weight: 600; color: var(--text);
+      cursor: pointer; white-space: nowrap;
+      transition: border-color .15s, color .15s;
+    }
+    .filter-toggle-btn .material-icons-round { font-size: 16px; }
+    .filter-toggle-btn.active { border-color: var(--accent); color: var(--accent); }
+    .active-filter-chip {
+      display: flex; align-items: center; gap: 4px;
+      background: var(--accent); border: none; border-radius: 20px;
+      padding: 5px 10px; font-size: 12px; font-weight: 700; color: #0f1116;
+      cursor: pointer;
+    }
+    .active-filter-chip .material-icons-round { font-size: 14px; }
+
+    /* ── Filter sheet ── */
+    .filter-amount-row {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+    }
+    .filter-amount-sep { font-size: 18px; color: var(--muted); flex-shrink: 0; }
+    .filter-presets { display: flex; gap: 8px; flex-wrap: wrap; }
+    .filter-preset-chip {
+      background: var(--surface2); border: 1.5px solid var(--border);
+      border-radius: 20px; padding: 6px 14px;
+      font-size: 13px; font-weight: 600; color: var(--text);
+      cursor: pointer; transition: border-color .15s, color .15s;
+    }
+    .filter-preset-chip.active { border-color: var(--accent); color: var(--accent); }
+    .filter-tag-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .filter-tag-chip {
+      display: flex; align-items: center; gap: 5px;
+      background: var(--surface2); border: 1.5px solid var(--border);
+      border-radius: 20px; padding: 6px 14px;
+      font-size: 13px; font-weight: 600; color: var(--text);
+      cursor: pointer; transition: border-color .15s, color .15s;
+    }
+    .filter-tag-chip.active { border-color: var(--accent); color: var(--accent); }
+    .filter-no-tags { font-size: 13px; color: var(--muted); }
   </style>
 </head>
 <body>
@@ -397,9 +445,14 @@
 <header>
   <div class="header-top">
     <div class="logo">frog<span>go</span></div>
-    <button class="settings-btn" id="settings-btn" aria-label="Settings">
-      <span class="material-icons-round">settings</span>
-    </button>
+    <div style="display:flex;gap:4px">
+      <button class="settings-btn" id="filter-btn" aria-label="Filter">
+        <span class="material-icons-round">tune</span>
+      </button>
+      <button class="settings-btn" id="settings-btn" aria-label="Settings">
+        <span class="material-icons-round">settings</span>
+      </button>
+    </div>
   </div>
   <div class="month-nav">
     <button id="prev-month" aria-label="Previous month">‹</button>
@@ -512,6 +565,35 @@
   </div>
 </div>
 
+<!-- Filter sheet -->
+<div class="sheet-overlay" id="filter-overlay"></div>
+<div class="bottom-sheet" id="filter-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title">Filter Expenses</div>
+  <div class="sheet-field">
+    <label>Price Range</label>
+    <div class="filter-amount-row">
+      <input class="sheet-input sm" id="filter-min" type="number" inputmode="decimal" placeholder="Min" min="0" step="0.01" />
+      <span class="filter-amount-sep">–</span>
+      <input class="sheet-input sm" id="filter-max" type="number" inputmode="decimal" placeholder="Max" min="0" step="0.01" />
+    </div>
+    <div class="filter-presets">
+      <button class="filter-preset-chip" data-min="" data-max="20">&lt; 20</button>
+      <button class="filter-preset-chip" data-min="20" data-max="50">20 – 50</button>
+      <button class="filter-preset-chip" data-min="50" data-max="100">50 – 100</button>
+      <button class="filter-preset-chip" data-min="100" data-max="">&gt; 100</button>
+    </div>
+  </div>
+  <div class="sheet-field">
+    <label>Category</label>
+    <div class="filter-tag-chips" id="filter-tag-chips"></div>
+  </div>
+  <div class="sheet-actions">
+    <button class="btn-save" id="btn-apply-filter">Apply</button>
+    <button class="btn-delete" id="btn-clear-filter" style="color:var(--muted)">Clear All</button>
+  </div>
+</div>
+
 <!-- Confirm delete modal -->
 <div class="modal-overlay" id="modal-overlay">
   <div class="modal">
@@ -544,6 +626,7 @@ let expenses = [];
 let viewYear, viewMonth;
 let editingId = null;
 let pendingDeleteId = null;
+let activeFilter = { minAmount: null, maxAmount: null, tag: null };
 
 // ── Persistence ──
 function load() {
@@ -631,38 +714,42 @@ function dayLabel(isoStr) {
   if (diff === 1) return `Yesterday · ${datePart}`;
   return datePart;
 }
-function emojiFor(desc) {
+const TAGS = [
+  { label: 'Coffee',    emoji: '☕', re: /coffee|latte|espresso|cappuccino/ },
+  { label: 'Tea',       emoji: '🍵', re: /tea/ },
+  { label: 'Food',      emoji: '🍔', re: /food|lunch|dinner|breakfast|meal|eat|restaurant|snack|fries|burger|pizza|sushi|taco|sandwich/ },
+  { label: 'Groceries', emoji: '🛒', re: /groceries|grocery|supermarket|market/ },
+  { label: 'Ride',      emoji: '🚕', re: /uber|lyft|taxi|cab|ride/ },
+  { label: 'Gas',       emoji: '⛽', re: /gas|petrol|fuel/ },
+  { label: 'Car',       emoji: '🚗', re: /car|parking|park/ },
+  { label: 'Transit',   emoji: '🚌', re: /bus|metro|subway|transit|train/ },
+  { label: 'Travel',    emoji: '✈️', re: /flight|plane|airline|airport/ },
+  { label: 'Hotel',     emoji: '🏨', re: /hotel|airbnb|lodging/ },
+  { label: 'Books',     emoji: '📚', re: /book|kindle|course|class|learn/ },
+  { label: 'Movies',    emoji: '🎬', re: /movie|cinema|netflix|film/ },
+  { label: 'Gaming',    emoji: '🎮', re: /game|gaming|playstation|xbox|steam/ },
+  { label: 'Music',     emoji: '🎵', re: /music|spotify|concert/ },
+  { label: 'Fitness',   emoji: '💪', re: /gym|fitness|sport|yoga/ },
+  { label: 'Health',    emoji: '💊', re: /doctor|medical|pharmacy|health|dentist/ },
+  { label: 'Clothes',   emoji: '👕', re: /clothes|clothing|shirt|shoes|jacket/ },
+  { label: 'Haircut',   emoji: '✂️', re: /haircut|salon|barber/ },
+  { label: 'Housing',   emoji: '🏠', re: /rent|mortgage|housing/ },
+  { label: 'Utilities', emoji: '💡', re: /electricity|water|internet|phone|utility/ },
+  { label: 'Income',    emoji: '💰', re: /salary|income|pay/ },
+  { label: 'Shopping',  emoji: '📦', re: /amazon|shopping|order/ },
+  { label: 'Gifts',     emoji: '🎁', re: /gift|present/ },
+  { label: 'Drinks',    emoji: '🍺', re: /bar|beer|wine|drink|alcohol/ },
+  { label: 'Ice Cream', emoji: '🍦', re: /ice cream|icecream/ },
+  { label: 'Dessert',   emoji: '🍰', re: /cake|dessert|chocolate/ },
+];
+function tagFor(desc) {
   const d = (desc || '').toLowerCase();
-  const map = [
-    [/coffee|latte|espresso|cappuccino/, '☕'],
-    [/tea/, '🍵'],
-    [/food|lunch|dinner|breakfast|meal|eat|restaurant|snack|fries|burger|pizza|sushi|taco|sandwich/, '🍔'],
-    [/groceries|grocery|supermarket|market/, '🛒'],
-    [/uber|lyft|taxi|cab|ride/, '🚕'],
-    [/gas|petrol|fuel/, '⛽'],
-    [/car|parking|park/, '🚗'],
-    [/bus|metro|subway|transit|train/, '🚌'],
-    [/flight|plane|airline|airport/, '✈️'],
-    [/hotel|airbnb|lodging/, '🏨'],
-    [/book|kindle|course|class|learn/, '📚'],
-    [/movie|cinema|netflix|film/, '🎬'],
-    [/game|gaming|playstation|xbox|steam/, '🎮'],
-    [/music|spotify|concert/, '🎵'],
-    [/gym|fitness|sport|yoga/, '💪'],
-    [/doctor|medical|pharmacy|health|dentist/, '💊'],
-    [/clothes|clothing|shirt|shoes|jacket/, '👕'],
-    [/haircut|salon|barber/, '✂️'],
-    [/rent|mortgage|housing/, '🏠'],
-    [/electricity|water|gas|internet|phone|utility/, '💡'],
-    [/salary|income|pay/, '💰'],
-    [/amazon|shopping|order/, '📦'],
-    [/gift|present/, '🎁'],
-    [/bar|beer|wine|drink|alcohol/, '🍺'],
-    [/ice cream|icecream/, '🍦'],
-    [/cake|dessert|chocolate/, '🍰'],
-  ];
-  for (const [re, emoji] of map) if (re.test(d)) return emoji;
-  return '💸';
+  for (const t of TAGS) if (t.re.test(d)) return t;
+  return null;
+}
+function emojiFor(desc) {
+  const t = tagFor(desc);
+  return t ? t.emoji : '💸';
 }
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -677,6 +764,7 @@ function ordinal(n) {
 function render() {
   renderMonthLabel();
   renderSummary();
+  renderFilterBar();
   renderHistory();
 }
 
@@ -697,19 +785,34 @@ function monthExpenses() {
 }
 
 function renderSummary() {
-  const list = monthExpenses();
+  const list = applyFilter(monthExpenses());
   const total = list.reduce((s, e) => s + parseFloat(e.amount), 0);
   document.getElementById('total-amount').innerHTML = fmtAmountHTML(total);
   const n = list.length;
   document.getElementById('total-count').textContent = `${n} expense${n !== 1 ? 's' : ''}`;
 }
 
+function applyFilter(list) {
+  const { minAmount, maxAmount, tag } = activeFilter;
+  if (minAmount === null && maxAmount === null && tag === null) return list;
+  return list.filter(e => {
+    const amount = parseFloat(e.amount);
+    if (minAmount !== null && amount < minAmount) return false;
+    if (maxAmount !== null && amount > maxAmount) return false;
+    if (tag !== null) { const t = tagFor(e.desc); if (!t || t.label !== tag) return false; }
+    return true;
+  });
+}
+
 function renderHistory() {
-  const list = monthExpenses().slice().sort((a, b) => new Date(b.date) - new Date(a.date));
+  const list = applyFilter(monthExpenses()).slice().sort((a, b) => new Date(b.date) - new Date(a.date));
   const container = document.getElementById('history-list');
 
   if (!list.length) {
-    container.innerHTML = `<div class="empty-state"><div class="big">🐸</div>No expenses yet.<br>Tap + to add your first one!</div>`;
+    const hasFilter = activeFilter.minAmount !== null || activeFilter.maxAmount !== null || activeFilter.tag !== null;
+    container.innerHTML = hasFilter
+      ? `<div class="empty-state"><div class="big">🔍</div>No expenses match this filter.</div>`
+      : `<div class="empty-state"><div class="big">🐸</div>No expenses yet.<br>Tap + to add your first one!</div>`;
     return;
   }
 
@@ -826,6 +929,58 @@ function saveEdit() {
   showToast('Saved');
 }
 
+// ── Filter ──
+function renderFilterBar() {
+  const { minAmount, maxAmount, tag } = activeFilter;
+  const hasFilter = minAmount !== null || maxAmount !== null || tag !== null;
+  document.getElementById('filter-btn').classList.toggle('active', hasFilter);
+}
+
+function openFilterSheet() {
+  document.getElementById('filter-min').value = activeFilter.minAmount ?? '';
+  document.getElementById('filter-max').value = activeFilter.maxAmount ?? '';
+  syncPresetChips();
+  renderFilterTagChips();
+  document.getElementById('filter-overlay').classList.add('open');
+  document.getElementById('filter-sheet').classList.add('open');
+}
+
+function closeFilterSheet() {
+  document.getElementById('filter-overlay').classList.remove('open');
+  document.getElementById('filter-sheet').classList.remove('open');
+}
+
+function syncPresetChips() {
+  const min = document.getElementById('filter-min').value;
+  const max = document.getElementById('filter-max').value;
+  document.querySelectorAll('.filter-preset-chip').forEach(c =>
+    c.classList.toggle('active', c.dataset.min === min && c.dataset.max === max)
+  );
+}
+
+function renderFilterTagChips() {
+  const seen = new Map();
+  for (const e of monthExpenses()) {
+    const t = tagFor(e.desc);
+    if (t && !seen.has(t.label)) seen.set(t.label, t);
+  }
+  const container = document.getElementById('filter-tag-chips');
+  if (!seen.size) {
+    container.innerHTML = `<span class="filter-no-tags">No categories in this month</span>`;
+    return;
+  }
+  container.innerHTML = [...seen.values()].map(t =>
+    `<button class="filter-tag-chip${activeFilter.tag === t.label ? ' active' : ''}" data-tag="${escHtml(t.label)}">${t.emoji} ${t.label}</button>`
+  ).join('');
+  container.querySelectorAll('.filter-tag-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const label = chip.dataset.tag;
+      activeFilter.tag = activeFilter.tag === label ? null : label;
+      container.querySelectorAll('.filter-tag-chip').forEach(c => c.classList.toggle('active', c.dataset.tag === activeFilter.tag));
+    });
+  });
+}
+
 // ── Settings sheet ──
 function openSettingsSheet() {
   document.getElementById('settings-overlay').classList.add('open');
@@ -926,6 +1081,7 @@ function showToast(msg) {
 
 // ── Month nav ──
 function changeMonth(delta) {
+  activeFilter = { minAmount: null, maxAmount: null, tag: null };
   viewMonth += delta;
   if (viewMonth > 11) { viewMonth = 0; viewYear++; }
   if (viewMonth < 0) { viewMonth = 11; viewYear--; }
@@ -980,6 +1136,32 @@ document.getElementById('btn-delete-from-sheet').addEventListener('click', () =>
 
 document.getElementById('edit-amount').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('edit-desc').focus(); });
 document.getElementById('edit-desc').addEventListener('keydown', e => { if (e.key === 'Enter') saveEdit(); });
+
+document.getElementById('filter-btn').addEventListener('click', openFilterSheet);
+document.getElementById('filter-overlay').addEventListener('click', closeFilterSheet);
+document.getElementById('btn-apply-filter').addEventListener('click', () => {
+  const minVal = document.getElementById('filter-min').value;
+  const maxVal = document.getElementById('filter-max').value;
+  activeFilter.minAmount = minVal ? parseFloat(minVal) : null;
+  activeFilter.maxAmount = maxVal ? parseFloat(maxVal) : null;
+  closeFilterSheet();
+  render();
+});
+document.getElementById('btn-clear-filter').addEventListener('click', () => {
+  activeFilter = { minAmount: null, maxAmount: null, tag: null };
+  document.getElementById('filter-min').value = '';
+  document.getElementById('filter-max').value = '';
+  document.querySelectorAll('.filter-preset-chip').forEach(c => c.classList.remove('active'));
+  closeFilterSheet();
+  render();
+});
+document.querySelectorAll('.filter-preset-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.getElementById('filter-min').value = chip.dataset.min;
+    document.getElementById('filter-max').value = chip.dataset.max;
+    syncPresetChips();
+  });
+});
 
 document.getElementById('settings-overlay').addEventListener('click', closeSettingsSheet);
 
