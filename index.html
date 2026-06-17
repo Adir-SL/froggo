@@ -103,10 +103,24 @@
       padding: 20px;
       border: 1px solid var(--border);
       flex-shrink: 0;
+      transition: padding .3s ease;
     }
-    .summary-label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 6px; }
-    .summary-amount { font-size: 40px; font-weight: 800; letter-spacing: -1.5px; color: var(--text); }
-    .summary-count { font-size: 13px; color: var(--muted); margin-top: 4px; }
+    .summary-label {
+      font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+      margin-bottom: 6px; max-height: 24px; overflow: hidden;
+      transition: opacity .25s ease, max-height .3s ease, margin-bottom .3s ease;
+    }
+    .summary-amount {
+      font-size: 40px; font-weight: 800; letter-spacing: -1.5px; color: var(--text);
+      transition: font-size .25s ease, letter-spacing .25s ease;
+    }
+    .summary-count {
+      font-size: 13px; color: var(--muted); margin-top: 4px; max-height: 24px; overflow: hidden;
+      transition: opacity .25s ease, max-height .3s ease, margin-top .3s ease;
+    }
+    .summary.scrolled { padding: 16px 20px; }
+    .summary.scrolled .summary-label { opacity: 0; max-height: 0; margin-bottom: 0; }
+    .summary.scrolled .summary-amount { font-size: 30px; letter-spacing: -1px; }
 
     /* ── Main content ── */
     .main-content {
@@ -169,7 +183,8 @@
     .fab-btn {
       position: absolute;
       bottom: calc(20px + env(safe-area-inset-bottom));
-      right: 20px;
+      left: 50%;
+      transform: translateX(-50%);
       width: 58px;
       height: 58px;
       border-radius: 50%;
@@ -185,7 +200,7 @@
       z-index: 10;
     }
     .fab-btn .material-icons-round { font-size: 30px; }
-    .fab-btn:active { transform: scale(.9); opacity: .85; }
+    .fab-btn:active { transform: translateX(-50%) scale(.9); opacity: .85; }
 
     /* ── Bottom sheets ── */
     .sheet-overlay {
@@ -1123,6 +1138,10 @@ document.getElementById('add-suggestions').addEventListener('click', e => {
 
 document.getElementById('prev-month').addEventListener('click', () => changeMonth(-1));
 document.getElementById('next-month').addEventListener('click', () => changeMonth(1));
+
+document.getElementById('history-list').addEventListener('scroll', function() {
+  document.querySelector('.summary').classList.toggle('scrolled', this.scrollTop > 10);
+}, { passive: true });
 
 document.getElementById('history-list').addEventListener('click', e => {
   const item = e.target.closest('.expense-item');
