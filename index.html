@@ -81,7 +81,10 @@
     #month-label {
       font-size: 18px; font-weight: 700; letter-spacing: -0.3px;
       color: var(--text); text-align: center; flex: 1;
+      transition: color .15s;
     }
+    #month-label.past { color: var(--accent); cursor: pointer; }
+    #month-label.past:active { opacity: .7; }
 
     .settings-btn {
       background: none; border: none;
@@ -788,8 +791,19 @@ function render() {
   renderHistory();
 }
 
+function currentViewYear() {
+  const now = new Date(), s = getCycleStartDay();
+  return now.getDate() >= s ? now.getFullYear() : new Date(now.getFullYear(), now.getMonth() - 1, 1).getFullYear();
+}
+function currentViewMonth() {
+  const now = new Date(), s = getCycleStartDay();
+  return now.getDate() >= s ? now.getMonth() : new Date(now.getFullYear(), now.getMonth() - 1, 1).getMonth();
+}
 function renderMonthLabel() {
-  document.getElementById('month-label').textContent = `${MONTH_NAMES[viewMonth].slice(0,3)} ${viewYear}`;
+  const label = document.getElementById('month-label');
+  label.textContent = `${MONTH_NAMES[viewMonth].slice(0,3)} ${viewYear}`;
+  const isPast = viewYear !== currentViewYear() || viewMonth !== currentViewMonth();
+  label.classList.toggle('past', isPast);
   const nextCycleStart = new Date(viewYear, viewMonth + 1, getCycleStartDay());
   document.getElementById('next-month').disabled = nextCycleStart > new Date();
 }
@@ -1146,6 +1160,25 @@ document.getElementById('add-suggestions').addEventListener('click', e => {
 
 document.getElementById('prev-month').addEventListener('click', () => changeMonth(-1));
 document.getElementById('next-month').addEventListener('click', () => changeMonth(1));
+document.getElementById('month-label').addEventListener('click', () => {
+  if (!document.getElementById('month-label').classList.contains('past')) return;
+  activeFilter = { minAmount: null, maxAmount: null, tag: null };
+  const list = document.getElementById('history-list');
+  list.style.transition = 'transform 0.2s cubic-bezier(0.4,0,1,1)';
+  list.style.transform = 'translateX(-100%)';
+  setTimeout(() => {
+    initView();
+    renderMonthLabel();
+    renderSummary();
+    renderFilterBar();
+    renderHistory();
+    list.style.transition = 'none';
+    list.style.transform = 'translateX(100%)';
+    list.getBoundingClientRect();
+    list.style.transition = 'transform 0.22s cubic-bezier(0,0,0.2,1)';
+    list.style.transform = 'translateX(0)';
+  }, 200);
+});
 
 document.getElementById('history-list').addEventListener('scroll', function() {
   document.querySelector('.summary').classList.toggle('scrolled', this.scrollTop > 10);
