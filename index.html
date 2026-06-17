@@ -447,7 +447,7 @@
     <div class="logo">frog<span>go</span></div>
     <div style="display:flex;gap:4px">
       <button class="settings-btn" id="filter-btn" aria-label="Filter">
-        <span class="material-icons-round">tune</span>
+        <span class="material-icons-round">filter_list</span>
       </button>
       <button class="settings-btn" id="settings-btn" aria-label="Settings">
         <span class="material-icons-round">settings</span>
@@ -585,7 +585,7 @@
     </div>
   </div>
   <div class="sheet-field">
-    <label>Category</label>
+    <label>Description</label>
     <div class="filter-tag-chips" id="filter-tag-chips"></div>
   </div>
   <div class="sheet-actions">
@@ -799,7 +799,7 @@ function applyFilter(list) {
     const amount = parseFloat(e.amount);
     if (minAmount !== null && amount < minAmount) return false;
     if (maxAmount !== null && amount > maxAmount) return false;
-    if (tag !== null) { const t = tagFor(e.desc); if (!t || t.label !== tag) return false; }
+    if (tag !== null && (e.desc || '').toLowerCase() !== tag) return false;
     return true;
   });
 }
@@ -811,7 +811,7 @@ function renderHistory() {
   if (!list.length) {
     const hasFilter = activeFilter.minAmount !== null || activeFilter.maxAmount !== null || activeFilter.tag !== null;
     container.innerHTML = hasFilter
-      ? `<div class="empty-state"><div class="big">🔍</div>No expenses match this filter.</div>`
+      ? `<div class="empty-state"><div class="big">🐸</div>No expenses match this filter.</div>`
       : `<div class="empty-state"><div class="big">🐸</div>No expenses yet.<br>Tap + to add your first one!</div>`;
     return;
   }
@@ -961,21 +961,20 @@ function syncPresetChips() {
 function renderFilterTagChips() {
   const seen = new Map();
   for (const e of monthExpenses()) {
-    const t = tagFor(e.desc);
-    if (t && !seen.has(t.label)) seen.set(t.label, t);
+    const key = (e.desc || '').toLowerCase();
+    if (!seen.has(key)) seen.set(key, { desc: e.desc || 'Expense', emoji: emojiFor(e.desc) });
   }
   const container = document.getElementById('filter-tag-chips');
   if (!seen.size) {
-    container.innerHTML = `<span class="filter-no-tags">No categories in this month</span>`;
+    container.innerHTML = `<span class="filter-no-tags">No expenses in this month</span>`;
     return;
   }
-  container.innerHTML = [...seen.values()].map(t =>
-    `<button class="filter-tag-chip${activeFilter.tag === t.label ? ' active' : ''}" data-tag="${escHtml(t.label)}">${t.emoji} ${t.label}</button>`
+  container.innerHTML = [...seen.values()].map(({ desc, emoji }) =>
+    `<button class="filter-tag-chip${activeFilter.tag === desc.toLowerCase() ? ' active' : ''}" data-tag="${escHtml(desc.toLowerCase())}">${emoji} ${escHtml(desc)}</button>`
   ).join('');
   container.querySelectorAll('.filter-tag-chip').forEach(chip => {
     chip.addEventListener('click', () => {
-      const label = chip.dataset.tag;
-      activeFilter.tag = activeFilter.tag === label ? null : label;
+      activeFilter.tag = activeFilter.tag === chip.dataset.tag ? null : chip.dataset.tag;
       container.querySelectorAll('.filter-tag-chip').forEach(c => c.classList.toggle('active', c.dataset.tag === activeFilter.tag));
     });
   });
