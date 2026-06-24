@@ -290,6 +290,14 @@
     }
     .btn-delete:active { background: rgba(248,113,113,.1); border-color: var(--red); }
 
+    .btn-neutral {
+      width: 100%; padding: 13px;
+      background: none; border: 2px solid var(--border); border-radius: 13px;
+      font-size: 15px; font-weight: 600; color: var(--muted); cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .btn-neutral:active { background: var(--surface2); border-color: var(--muted); }
+
     .sheet-suggestions {
       display: flex;
       flex-wrap: wrap;
@@ -582,6 +590,11 @@
       </select>
     </div>
   </div>
+  <input type="file" id="import-file-input" accept=".json" style="display:none">
+  <div class="sheet-actions" style="flex-direction:row">
+    <button class="btn-save" id="btn-export-data" style="flex:1">Export Data</button>
+    <button class="btn-neutral" id="btn-import-data" style="flex:1">Import Data</button>
+  </div>
 </div>
 
 <!-- Filter sheet -->
@@ -622,6 +635,20 @@
     <div class="modal-btns">
       <button class="modal-cancel" id="modal-cancel">Cancel</button>
       <button class="modal-confirm" id="modal-confirm">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import confirm modal -->
+<div class="modal-overlay" id="import-modal-overlay">
+  <div class="modal">
+    <div class="modal-icon">📥</div>
+    <div class="modal-title">Import Data</div>
+    <div class="modal-body">How would you like to handle your existing data?</div>
+    <div class="modal-btns" style="flex-direction:column">
+      <button class="modal-confirm" id="import-replace-btn" style="background:var(--accent)">Replace Data</button>
+      <button class="modal-cancel" id="import-add-btn" style="color:var(--accent);border-color:var(--accent)">Add to Data</button>
+      <button class="modal-cancel" id="import-cancel-btn">Cancel</button>
     </div>
   </div>
 </div>
@@ -1143,9 +1170,76 @@ function changeMonth(delta) {
   }, 200);
 }
 
+// ── Import / Export ──
+let pendingImportData = null;
+
+function exportData() {
+  const data = {
+    expenses: JSON.parse(localStorage.getItem('froggo_expenses') || '[]'),
+    suggestions: JSON.parse(localStorage.getItem('froggo_suggestions') || '[]'),
+    settings: JSON.parse(localStorage.getItem('froggo_settings') || '{}'),
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const date = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `froggo-backup-${date}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importData(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!Array.isArray(data.expenses)) throw new Error('Invalid format');
+      pendingImportData = data;
+      document.getElementById('import-modal-overlay').classList.add('open');
+    } catch {
+      alert('Invalid backup file. Please choose a valid Froggo export.');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function closeImportModal() {
+  pendingImportData = null;
+  document.getElementById('import-modal-overlay').classList.remove('open');
+}
+
+function applyImport(mode) {
+  const data = pendingImportData;
+  if (!data) return;
+  if (mode === 'replace') {
+    localStorage.setItem('froggo_expenses', JSON.stringify(data.expenses));
+    if (Array.isArray(data.suggestions))
+      localStorage.setItem('froggo_suggestions', JSON.stringify(data.suggestions));
+    if (data.settings && typeof data.settings === 'object')
+      localStorage.setItem('froggo_settings', JSON.stringify(data.settings));
+  } else if (mode === 'add') {
+    const existing = JSON.parse(localStorage.getItem('froggo_expenses') || '[]');
+    const existingIds = new Set(existing.map(e => e.id));
+    const merged = [...existing, ...data.expenses.filter(e => !existingIds.has(e.id))];
+    localStorage.setItem('froggo_expenses', JSON.stringify(merged));
+  }
+  location.reload();
+}
+
 // ── Events ──
 document.getElementById('fab-add').addEventListener('click', openAddSheet);
 document.getElementById('settings-btn').addEventListener('click', openSettingsSheet);
+document.getElementById('btn-export-data').addEventListener('click', () => { closeSettingsSheet(); exportData(); });
+document.getElementById('btn-import-data').addEventListener('click', () => { closeSettingsSheet(); document.getElementById('import-file-input').click(); });
+document.getElementById('import-file-input').addEventListener('change', e => {
+  if (e.target.files[0]) importData(e.target.files[0]);
+  e.target.value = '';
+});
+document.getElementById('import-replace-btn').addEventListener('click', () => applyImport('replace'));
+document.getElementById('import-add-btn').addEventListener('click', () => applyImport('add'));
+document.getElementById('import-cancel-btn').addEventListener('click', closeImportModal);
+document.getElementById('import-modal-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeImportModal(); });
 
 document.getElementById('add-amount').addEventListener('input', updateAddConfirmBtn);
 document.getElementById('add-amount').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('add-desc').focus(); });
