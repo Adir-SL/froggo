@@ -1,4 +1,4 @@
-# froggo 🐸
+# Froggo 🐸
 
 A minimal, zero-dependency expense tracker that runs entirely in the browser. No server, no build step, no accounts — just open `index.html` and start logging.
 
