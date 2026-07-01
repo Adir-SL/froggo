@@ -465,6 +465,7 @@
     }
     .filter-tag-chip.active { border-color: var(--accent); color: var(--accent); }
     .filter-no-tags { font-size: 13px; color: var(--muted); }
+
   </style>
 </head>
 <body>
@@ -626,6 +627,21 @@
   </div>
 </div>
 
+<!-- Emoji edit modal -->
+<div class="modal-overlay" id="emoji-modal-overlay">
+  <div class="modal">
+    <div style="font-size:48px;margin-bottom:4px;line-height:1.2" id="emoji-modal-preview">☕</div>
+    <div class="modal-title" id="emoji-modal-tag-name"></div>
+    <div class="modal-body" style="margin-bottom:14px">Tap the field and use your emoji keyboard</div>
+    <input class="sheet-input" id="emoji-input" type="text" style="font-size:32px;text-align:center;margin-bottom:16px" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" />
+    <div class="modal-btns" style="flex-direction:column">
+      <button class="modal-confirm" id="emoji-modal-save" style="background:var(--accent)">Save</button>
+      <button class="modal-cancel" id="emoji-modal-reset" style="color:var(--muted)">Reset to Default</button>
+      <button class="modal-cancel" id="emoji-modal-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Confirm delete modal -->
 <div class="modal-overlay" id="modal-overlay">
   <div class="modal">
@@ -659,6 +675,7 @@
 const STORAGE_KEY = 'froggo_expenses';
 const SUGGESTIONS_KEY = 'froggo_suggestions';
 const SETTINGS_KEY = 'froggo_settings';
+const TAGS_KEY = 'froggo_tag_emojis';
 
 // Migrate data from old "froggy" keys if present
 ['expenses', 'suggestions', 'settings'].forEach(k => {
@@ -673,10 +690,13 @@ let viewYear, viewMonth;
 let editingId = null;
 let pendingDeleteId = null;
 let activeFilter = { minAmount: null, maxAmount: null, tag: null };
+let tagEmojiOverrides = {};
+let editingTagLabel = null;
 
 // ── Persistence ──
 function load() {
   try { expenses = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { expenses = []; }
+  try { tagEmojiOverrides = JSON.parse(localStorage.getItem(TAGS_KEY)) || {}; } catch { tagEmojiOverrides = {}; }
 }
 function save() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
@@ -714,6 +734,9 @@ function getTimeFormat() {
 }
 function getDateFormat() {
   return getSettings().dateFormat || 'dmy';
+}
+function saveTagEmojis() {
+  localStorage.setItem(TAGS_KEY, JSON.stringify(tagEmojiOverrides));
 }
 
 // ── Date helpers ──
@@ -799,6 +822,8 @@ function tagFor(desc) {
   return null;
 }
 function emojiFor(desc) {
+  const key = (desc || '').toLowerCase();
+  if (tagEmojiOverrides[key]) return tagEmojiOverrides[key];
   const t = tagFor(desc);
   return t ? t.emoji : '💸';
 }
@@ -1178,6 +1203,7 @@ function exportData() {
     expenses: JSON.parse(localStorage.getItem('froggo_expenses') || '[]'),
     suggestions: JSON.parse(localStorage.getItem('froggo_suggestions') || '[]'),
     settings: JSON.parse(localStorage.getItem('froggo_settings') || '{}'),
+    tagEmojis: JSON.parse(localStorage.getItem('froggo_tag_emojis') || '{}'),
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -1218,6 +1244,8 @@ function applyImport(mode) {
       localStorage.setItem('froggo_suggestions', JSON.stringify(data.suggestions));
     if (data.settings && typeof data.settings === 'object')
       localStorage.setItem('froggo_settings', JSON.stringify(data.settings));
+    if (data.tagEmojis && typeof data.tagEmojis === 'object')
+      localStorage.setItem('froggo_tag_emojis', JSON.stringify(data.tagEmojis));
   } else if (mode === 'add') {
     const existing = JSON.parse(localStorage.getItem('froggo_expenses') || '[]');
     const existingIds = new Set(existing.map(e => e.id));
@@ -1225,6 +1253,35 @@ function applyImport(mode) {
     localStorage.setItem('froggo_expenses', JSON.stringify(merged));
   }
   location.reload();
+}
+
+// ── Emoji edit modal ──
+function openEmojiModal(desc) {
+  editingTagLabel = desc;
+  const key = desc.toLowerCase();
+  const current = tagEmojiOverrides[key] || (tagFor(desc)?.emoji) || '💸';
+  document.getElementById('emoji-modal-preview').textContent = current;
+  document.getElementById('emoji-modal-tag-name').textContent = desc;
+  document.getElementById('emoji-input').value = current;
+  document.getElementById('emoji-modal-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('emoji-input').focus(), 300);
+}
+
+function closeEmojiModal() {
+  editingTagLabel = null;
+  document.getElementById('emoji-modal-overlay').classList.remove('open');
+}
+
+function saveEmojiEdit() {
+  if (!editingTagLabel) return;
+  const val = document.getElementById('emoji-input').value.trim();
+  if (!val) return;
+  tagEmojiOverrides[editingTagLabel.toLowerCase()] = val;
+  saveTagEmojis();
+  closeEmojiModal();
+  renderAddSuggestions(document.getElementById('add-desc').value);
+  render();
+  showToast('Emoji updated');
 }
 
 // ── Events ──
@@ -1248,10 +1305,35 @@ document.getElementById('add-desc').addEventListener('keydown', e => { if (e.key
 document.getElementById('btn-add-confirm').addEventListener('click', confirmAdd);
 document.getElementById('add-overlay').addEventListener('click', closeAddSheet);
 
-document.getElementById('add-suggestions').addEventListener('click', e => {
-  const chip = e.target.closest('.suggestion-chip');
-  if (chip) { document.getElementById('add-desc').value = chip.dataset.val; renderAddSuggestions(''); }
-});
+// Long-press on suggestion chip opens emoji editor; normal tap fills description
+(function() {
+  const container = document.getElementById('add-suggestions');
+  let timer = null, longFired = false, startX = 0, startY = 0;
+
+  container.addEventListener('pointerdown', e => {
+    const chip = e.target.closest('.suggestion-chip');
+    if (!chip) return;
+    longFired = false;
+    startX = e.clientX; startY = e.clientY;
+    timer = setTimeout(() => {
+      longFired = true;
+      if (navigator.vibrate) navigator.vibrate(30);
+      openEmojiModal(chip.dataset.val);
+    }, 500);
+  });
+  container.addEventListener('pointermove', e => {
+    if (Math.abs(e.clientX - startX) > 8 || Math.abs(e.clientY - startY) > 8) {
+      clearTimeout(timer); timer = null;
+    }
+  });
+  container.addEventListener('pointerup', () => { clearTimeout(timer); timer = null; });
+  container.addEventListener('pointercancel', () => { clearTimeout(timer); timer = null; });
+  container.addEventListener('click', e => {
+    if (longFired) { longFired = false; return; }
+    const chip = e.target.closest('.suggestion-chip');
+    if (chip) { document.getElementById('add-desc').value = chip.dataset.val; renderAddSuggestions(''); }
+  });
+})();
 
 document.getElementById('prev-month').addEventListener('click', () => changeMonth(-1));
 document.getElementById('next-month').addEventListener('click', () => changeMonth(1));
@@ -1318,6 +1400,22 @@ document.querySelectorAll('.filter-preset-chip').forEach(chip => {
 });
 
 document.getElementById('settings-overlay').addEventListener('click', closeSettingsSheet);
+
+document.getElementById('emoji-input').addEventListener('input', e => {
+  document.getElementById('emoji-modal-preview').textContent = e.target.value || '?';
+});
+document.getElementById('emoji-modal-save').addEventListener('click', saveEmojiEdit);
+document.getElementById('emoji-modal-reset').addEventListener('click', () => {
+  if (!editingTagLabel) return;
+  delete tagEmojiOverrides[editingTagLabel.toLowerCase()];
+  saveTagEmojis();
+  closeEmojiModal();
+  renderAddSuggestions(document.getElementById('add-desc').value);
+  render();
+  showToast('Emoji reset');
+});
+document.getElementById('emoji-modal-cancel').addEventListener('click', closeEmojiModal);
+document.getElementById('emoji-modal-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeEmojiModal(); });
 
 document.getElementById('modal-cancel').addEventListener('click', closeModal);
 document.getElementById('modal-confirm').addEventListener('click', confirmDelete);
