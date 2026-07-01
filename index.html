@@ -465,7 +465,6 @@
     }
     .filter-tag-chip.active { border-color: var(--accent); color: var(--accent); }
     .filter-no-tags { font-size: 13px; color: var(--muted); }
-
   </style>
 </head>
 <body>
@@ -590,6 +589,13 @@
         <option value="mdy">Jun 14</option>
       </select>
     </div>
+    <div class="settings-row" id="btn-manage-tags" style="cursor:pointer">
+      <div>
+        <div class="settings-row-label">Suggestion tags emoji</div>
+        <div class="settings-row-desc">Customize emojis for your saved tags</div>
+      </div>
+      <span class="material-icons-round" style="color:var(--muted)">chevron_right</span>
+    </div>
   </div>
   <input type="file" id="import-file-input" accept=".json" style="display:none">
   <div class="sheet-actions" style="flex-direction:row">
@@ -625,6 +631,14 @@
     <button class="btn-save" id="btn-apply-filter">Apply</button>
     <button class="btn-delete" id="btn-clear-filter" style="color:var(--muted)">Clear All</button>
   </div>
+</div>
+
+<!-- Tag emojis sub-sheet -->
+<div class="sheet-overlay" id="tags-overlay"></div>
+<div class="bottom-sheet" id="tags-sheet" style="max-height:85dvh;display:flex;flex-direction:column">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title">Suggestion Tags</div>
+  <div class="sheet-suggestions" id="tags-chip-list" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;align-content:flex-start;padding-bottom:8px"></div>
 </div>
 
 <!-- Emoji edit modal -->
@@ -1070,6 +1084,32 @@ function renderFilterTagChips() {
 }
 
 // ── Settings sheet ──
+function openTagsSubSheet() {
+  renderTagsSubSheet();
+  document.getElementById('tags-overlay').classList.add('open');
+  document.getElementById('tags-sheet').classList.add('open');
+}
+
+function closeTagsSubSheet() {
+  document.getElementById('tags-overlay').classList.remove('open');
+  document.getElementById('tags-sheet').classList.remove('open');
+}
+
+function renderTagsSubSheet() {
+  const suggestions = loadSuggestions();
+  const container = document.getElementById('tags-chip-list');
+  if (!suggestions.length) {
+    container.innerHTML = '<span style="font-size:13px;color:var(--muted)">No tags yet — add some expenses first</span>';
+    return;
+  }
+  container.innerHTML = suggestions.map(s =>
+    `<button class="suggestion-chip" data-val="${escHtml(s)}">${emojiFor(s)} ${escHtml(s)}</button>`
+  ).join('');
+  container.querySelectorAll('.suggestion-chip').forEach(chip => {
+    chip.addEventListener('click', () => openEmojiModal(chip.dataset.val));
+  });
+}
+
 function openSettingsSheet() {
   document.getElementById('settings-overlay').classList.add('open');
   document.getElementById('settings-sheet').classList.add('open');
@@ -1280,6 +1320,7 @@ function saveEmojiEdit() {
   saveTagEmojis();
   closeEmojiModal();
   renderAddSuggestions(document.getElementById('add-desc').value);
+  renderTagsSubSheet();
   render();
   showToast('Emoji updated');
 }
@@ -1400,6 +1441,8 @@ document.querySelectorAll('.filter-preset-chip').forEach(chip => {
 });
 
 document.getElementById('settings-overlay').addEventListener('click', closeSettingsSheet);
+document.getElementById('btn-manage-tags').addEventListener('click', () => { closeSettingsSheet(); openTagsSubSheet(); });
+document.getElementById('tags-overlay').addEventListener('click', closeTagsSubSheet);
 
 document.getElementById('emoji-input').addEventListener('input', e => {
   document.getElementById('emoji-modal-preview').textContent = e.target.value || '?';
@@ -1411,6 +1454,7 @@ document.getElementById('emoji-modal-reset').addEventListener('click', () => {
   saveTagEmojis();
   closeEmojiModal();
   renderAddSuggestions(document.getElementById('add-desc').value);
+  renderTagsSubSheet();
   render();
   showToast('Emoji reset');
 });
